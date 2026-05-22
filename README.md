@@ -45,3 +45,53 @@ One-time setup in the GitHub repo:
    `https://<your-username>.github.io/*`.
 
 The live site is published at `https://<your-username>.github.io/pubcrawl/`.
+
+## Cross-device sync (optional)
+
+By default, each browser keeps its own copy of the route in `localStorage`. To
+make edits sync in real time across friends' phones, add Firebase Realtime
+Database.
+
+1. Go to [console.firebase.google.com](https://console.firebase.google.com) and
+   create a project (you can keep Google Analytics off).
+2. In the left sidebar: **Build &rarr; Realtime Database &rarr; Create Database**.
+   Pick a region close to you (e.g. `europe-west1`) and start in **test mode**
+   for the simplest setup.
+3. After creating, go to **Rules** and paste:
+
+   ```json
+   {
+     "rules": {
+       "rooms": {
+         "$room": {
+           ".read": true,
+           ".write": true
+         }
+       }
+     }
+   }
+   ```
+
+   This lets anyone with the app URL read and edit the shared crawl. For a
+   private crawl with friends that is fine; tighten the rules later if needed.
+
+4. In the Firebase console: **Project settings &rarr; General &rarr; Your apps
+   &rarr; Web** (the `</>` icon) to register a web app. Copy these values from
+   the config snippet into your `.env.local`:
+
+   ```
+   VITE_FIREBASE_API_KEY=...
+   VITE_FIREBASE_AUTH_DOMAIN=...projectId.firebaseapp.com
+   VITE_FIREBASE_DATABASE_URL=https://...firebaseio.com
+   VITE_FIREBASE_PROJECT_ID=...
+   ```
+
+5. Restart `npm run dev`. Open the app in two browsers (or your phone +
+   laptop) &mdash; edits in one show up in the other within a second.
+
+6. To make it work on the deployed site too, add the same four values as
+   GitHub Actions secrets (**Settings &rarr; Secrets and variables &rarr;
+   Actions**) and re-run the deploy workflow.
+
+Leave the four Firebase env vars blank to disable sync and use local storage
+only.

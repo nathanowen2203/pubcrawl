@@ -4,31 +4,74 @@ import MapPanel from './MapPanel.jsx'
 import PubList from './PubList.jsx'
 import AddPub from './AddPub.jsx'
 import { CLIFTON_CENTER, DEFAULT_PUBS } from './data/pubs.js'
-import { clearState, loadState, saveState } from './lib/storage.js'
+import { loadState, saveState } from './lib/storage.js'
+import { SYNC_ENABLED, subscribeCrawl, writeCrawl } from './lib/sync.js'
 import { formatDistance, formatDuration, googleMapsRouteUrl } from './lib/maps.js'
 
 function freshPubs() {
   return DEFAULT_PUBS.map((pub) => ({ ...pub, status: 'pending' }))
 }
 
+function defaultState() {
+  return { pubs: freshPubs(), removed: [] }
+}
+
 function initialState() {
+  if (SYNC_ENABLED) return defaultState()
   const saved = loadState()
   if (saved && Array.isArray(saved.pubs) && saved.pubs.length) {
     return { pubs: saved.pubs, removed: saved.removed ?? [] }
   }
-  return { pubs: freshPubs(), removed: [] }
+  return defaultState()
 }
 
 export default function PubCrawl({ placesLib, hasKey }) {
   const [{ pubs, removed }, setState] = useState(initialState)
   const [legs, setLegs] = useState([])
   const [userLocation, setUserLocation] = useState(null)
+  const [synced, setSynced] = useState(!SYNC_ENABLED)
   const resolving = useRef(new Set())
+  const remoteUpdate = useRef(false)
+  const firstSnap = useRef(true)
 
-  // Persist every edit.
+  // Subscribe to remote state. First snapshot seeds the app; subsequent ones
+  // overwrite local state with whatever friends have changed.
   useEffect(() => {
-    saveState({ pubs, removed })
-  }, [pubs, removed])
+    if (!SYNC_ENABLED) return
+    return subscribeCrawl((data) => {
+      const firstTime = firstSnap.current
+      firstSnap.current = false
+      if (firstTime && !data) {
+        // Empty room — seed it with defaults so others see them too.
+        writeCrawl(defaultState())
+        setSynced(true)
+        return
+      }
+      if (data) {
+        remoteUpdate.current = true
+        setState({
+          pubs: Array.isArray(data.pubs) ? data.pubs : freshPubs(),
+          removed: Array.isArray(data.removed) ? data.removed : [],
+        })
+      }
+      setSynced(true)
+    })
+  }, [])
+
+  // Persist every edit. Local edits go to Firebase (or localStorage); remote
+  // updates are skipped via the remoteUpdate guard so we don't echo back.
+  useEffect(() => {
+    if (!synced) return
+    if (SYNC_ENABLED) {
+      if (remoteUpdate.current) {
+        remoteUpdate.current = false
+        return
+      }
+      writeCrawl({ pubs, removed })
+    } else {
+      saveState({ pubs, removed })
+    }
+  }, [pubs, removed, synced])
 
   // Resolve each pub's exact location through Google Places.
   useEffect(() => {
@@ -121,10 +164,9 @@ export default function PubCrawl({ placesLib, hasKey }) {
   }, [])
 
   const reset = useCallback(() => {
-    clearState()
     resolving.current = new Set()
     setLegs([])
-    setState({ pubs: freshPubs(), removed: [] })
+    setState(defaultState())
   }, [])
 
   const locate = useCallback(() => {
