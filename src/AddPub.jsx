@@ -25,9 +25,10 @@ export default function AddPub({ removed, placesLib, onRestore, onAdd }) {
       if (!places || places.length === 0) {
         setMessage('No matches — try a more specific name.')
       }
-    } catch {
+    } catch (err) {
+      console.error('Places searchByText failed:', err)
       setMessage(
-        'Search failed. Check that Places API (New) is enabled for your key.',
+        `Search failed: ${err?.message || 'unknown error'} — see browser console for details.`,
       )
     } finally {
       setSearching(false)

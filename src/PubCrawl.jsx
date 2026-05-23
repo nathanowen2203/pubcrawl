@@ -107,7 +107,8 @@ export default function PubCrawl({ placesLib, hasKey }) {
                 status: 'ok',
               }
             : { status: 'failed' }
-        } catch {
+        } catch (err) {
+          console.error(`Places searchByText failed for "${pub.name}":`, err)
           patch = { status: 'failed' }
         }
         setState((s) => ({
