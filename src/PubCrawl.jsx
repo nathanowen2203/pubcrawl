@@ -215,9 +215,8 @@ export default function PubCrawl({ placesLib, hasKey }) {
       <main className="mx-auto max-w-[520px] px-4">
         {!hasKey && (
           <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
-            Add your Google Maps API key to{' '}
-            <code className="font-semibold">.env.local</code> and restart the dev
-            server to see the map and live walking times.
+            Google Maps API key not configured — the map and walking times
+            won't load until it's added.
           </div>
         )}
 
