@@ -9,7 +9,16 @@ import { SYNC_ENABLED, subscribeCrawl, writeCrawl } from './lib/sync.js'
 import { formatDistance, formatDuration, googleMapsRouteUrl } from './lib/maps.js'
 
 function freshPubs() {
-  return DEFAULT_PUBS.map((pub) => ({ ...pub, status: 'pending' }))
+  return DEFAULT_PUBS.map((pub) => ({
+    ...pub,
+    status: 'pending',
+    visitStatus: 'upcoming',
+    note: '',
+  }))
+}
+
+function nextVisitStatus(s) {
+  return s === 'upcoming' ? 'current' : s === 'current' ? 'done' : 'upcoming'
 }
 
 function defaultState() {
@@ -157,11 +166,65 @@ export default function PubCrawl({ placesLib, hasKey }) {
   const addPub = useCallback((pub) => {
     setState((s) => {
       if (s.pubs.some((p) => p.id === pub.id)) return s
+      const enriched = {
+        visitStatus: 'upcoming',
+        note: '',
+        ...pub,
+      }
       return {
-        pubs: [...s.pubs, pub],
+        pubs: [...s.pubs, enriched],
         removed: s.removed.filter((p) => p.id !== pub.id),
       }
     })
+  }, [])
+
+  const cycleVisit = useCallback((id) => {
+    setState((s) => {
+      const target = s.pubs.find((p) => p.id === id)
+      if (!target) return s
+      const next = nextVisitStatus(target.visitStatus ?? 'upcoming')
+      return {
+        ...s,
+        pubs: s.pubs.map((p) => {
+          if (p.id === id) return { ...p, visitStatus: next }
+          // Only one pub can be "current" at a time — demote any others.
+          if (next === 'current' && p.visitStatus === 'current') {
+            return { ...p, visitStatus: 'done' }
+          }
+          return p
+        }),
+      }
+    })
+  }, [])
+
+  const setNote = useCallback((id, note) => {
+    setState((s) => ({
+      ...s,
+      pubs: s.pubs.map((p) => (p.id === id ? { ...p, note } : p)),
+    }))
+  }, [])
+
+  const share = useCallback(async () => {
+    const url = window.location.href
+    const payload = {
+      title: 'The Stops — Clifton Pub Crawl',
+      text: 'Our pub crawl route 🍻',
+      url,
+    }
+    if (navigator.share) {
+      try {
+        await navigator.share(payload)
+        return 'shared'
+      } catch {
+        return null
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      return 'copied'
+    } catch {
+      return null
+    }
   }, [])
 
   const reset = useCallback(() => {
@@ -197,6 +260,15 @@ export default function PubCrawl({ placesLib, hasKey }) {
   const totalDistance = legs.reduce((sum, l) => sum + (l.distanceM || 0), 0)
   const routeUrl = useMemo(() => googleMapsRouteUrl(pubs), [pubs])
 
+  const doneCount = useMemo(
+    () => pubs.filter((p) => p.visitStatus === 'done').length,
+    [pubs],
+  )
+  const currentPub = useMemo(
+    () => pubs.find((p) => p.visitStatus === 'current') ?? null,
+    [pubs],
+  )
+
   return (
     <div className="min-h-full pb-12">
       <Header />
@@ -223,11 +295,14 @@ export default function PubCrawl({ placesLib, hasKey }) {
 
         <RouteSummary
           stops={pubs.length}
+          doneCount={doneCount}
+          currentPub={currentPub}
           totalDuration={totalDuration}
           totalDistance={totalDistance}
           routeUrl={routeUrl}
           onLocate={locate}
           onReset={reset}
+          onShare={share}
         />
 
         <PubList
@@ -236,6 +311,8 @@ export default function PubCrawl({ placesLib, hasKey }) {
           hasKey={hasKey}
           onMove={move}
           onRemove={removePub}
+          onCycleVisit={cycleVisit}
+          onSetNote={setNote}
         />
 
         <AddPub
@@ -257,36 +334,93 @@ export default function PubCrawl({ placesLib, hasKey }) {
 
 function RouteSummary({
   stops,
+  doneCount,
+  currentPub,
   totalDuration,
   totalDistance,
   routeUrl,
   onLocate,
   onReset,
+  onShare,
 }) {
-  const subtitle =
+  const [shareMsg, setShareMsg] = useState('')
+  const walkingLine =
     totalDuration > 0
       ? `${formatDuration(totalDuration)} walking${
           totalDistance ? ` · ${formatDistance(totalDistance)}` : ''
         }`
       : 'Walking times load with the map'
 
+  const progressPct = stops > 0 ? Math.round((doneCount / stops) * 100) : 0
+  const allDone = stops > 0 && doneCount === stops
+
+  async function handleShare() {
+    const result = await onShare()
+    if (result === 'copied') {
+      setShareMsg('Link copied!')
+      setTimeout(() => setShareMsg(''), 1800)
+    } else if (result === 'shared') {
+      setShareMsg('')
+    }
+  }
+
   return (
     <section className="mt-4 rounded-2xl border border-pub-green/25 bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-display text-xl font-bold text-ink">
-            {stops} {stops === 1 ? 'stop' : 'stops'}
-          </p>
-          <p className="mt-0.5 text-sm text-ink/70">{subtitle}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          {currentPub ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-sun">
+                📍 Now at
+              </p>
+              <p className="truncate font-display text-xl font-bold text-pub-green-deep">
+                {currentPub.name}
+              </p>
+            </>
+          ) : allDone ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-pub-green">
+                🍻 All stops complete
+              </p>
+              <p className="font-display text-xl font-bold text-ink">
+                Nicely done
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-display text-xl font-bold text-ink">
+                {stops} {stops === 1 ? 'stop' : 'stops'}
+              </p>
+              <p className="mt-0.5 text-sm text-ink/70">{walkingLine}</p>
+            </>
+          )}
         </div>
         <button
           type="button"
           onClick={onLocate}
-          className="shrink-0 rounded-full bg-pub-green px-3.5 py-2 text-xs font-semibold text-cream"
+          className="shrink-0 rounded-full bg-pub-green px-3.5 py-2 text-xs font-semibold text-cream active:bg-pub-green-deep"
         >
           My location
         </button>
       </div>
+
+      {stops > 0 && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-xs font-medium text-ink/65">
+            <span>
+              {doneCount} of {stops} visited
+            </span>
+            <span>{walkingLine}</span>
+          </div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10">
+            <div
+              className="h-full bg-pub-green transition-[width] duration-500"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 flex gap-2">
         <a
           href={routeUrl || undefined}
@@ -295,18 +429,28 @@ function RouteSummary({
           aria-disabled={!routeUrl}
           className={
             routeUrl
-              ? 'flex-1 rounded-xl bg-pub-green-deep py-2.5 text-center text-sm font-semibold text-cream'
+              ? 'flex-1 rounded-xl bg-pub-green-deep py-2.5 text-center text-sm font-semibold text-cream active:bg-pub-green'
               : 'pointer-events-none flex-1 rounded-xl bg-ink/10 py-2.5 text-center text-sm font-semibold text-ink/40'
           }
         >
-          Open route in Google Maps
+          Open in Google Maps
         </a>
         <button
           type="button"
-          onClick={onReset}
-          className="rounded-xl border border-ink/20 px-4 py-2.5 text-sm font-medium text-ink/70"
+          onClick={handleShare}
+          className="rounded-xl bg-pub-green px-4 py-2.5 text-sm font-semibold text-cream active:bg-pub-green-deep"
         >
-          Reset
+          Share
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-xs text-pub-green-deep">{shareMsg}</span>
+        <button
+          type="button"
+          onClick={onReset}
+          className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink/55 hover:text-ink active:bg-ink/5"
+        >
+          Reset all
         </button>
       </div>
     </section>

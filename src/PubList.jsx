@@ -1,6 +1,42 @@
+import { useEffect, useState } from 'react'
 import { googleMapsPlaceUrl } from './lib/maps.js'
 
-export default function PubList({ pubs, legByPubId, hasKey, onMove, onRemove }) {
+const STATUS_STYLE = {
+  upcoming: {
+    pillBg: 'bg-ink/5 text-ink/70',
+    pillLabel: 'Upcoming · tap when you arrive',
+    cardBorder: 'border-pub-green/20',
+    cardBg: 'bg-card',
+    number: 'bg-pub-green text-white',
+    titleClass: 'text-pub-green',
+  },
+  current: {
+    pillBg: 'bg-sun text-white',
+    pillLabel: '📍 Here now · tap when leaving',
+    cardBorder: 'border-sun',
+    cardBg: 'bg-amber-50',
+    number: 'bg-sun text-white',
+    titleClass: 'text-pub-green-deep',
+  },
+  done: {
+    pillBg: 'bg-pub-green/15 text-pub-green-deep',
+    pillLabel: '✓ Done · tap to undo',
+    cardBorder: 'border-pub-green/15',
+    cardBg: 'bg-card/70',
+    number: 'bg-pub-green/40 text-white',
+    titleClass: 'text-ink/55',
+  },
+}
+
+export default function PubList({
+  pubs,
+  legByPubId,
+  hasKey,
+  onMove,
+  onRemove,
+  onCycleVisit,
+  onSetNote,
+}) {
   return (
     <section className="mt-5">
       <h2 className="px-1 pb-2 font-display text-lg font-bold text-ink">
@@ -23,6 +59,8 @@ export default function PubList({ pubs, legByPubId, hasKey, onMove, onRemove }) 
               hasKey={hasKey}
               onMove={onMove}
               onRemove={onRemove}
+              onCycleVisit={onCycleVisit}
+              onSetNote={onSetNote}
             />
           ))}
         </ol>
@@ -31,13 +69,32 @@ export default function PubList({ pubs, legByPubId, hasKey, onMove, onRemove }) 
   )
 }
 
-function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove }) {
+function PubCard({
+  pub,
+  index,
+  isFirst,
+  isLast,
+  leg,
+  hasKey,
+  onMove,
+  onRemove,
+  onCycleVisit,
+  onSetNote,
+}) {
+  const visit = pub.visitStatus ?? 'upcoming'
+  const style = STATUS_STYLE[visit] ?? STATUS_STYLE.upcoming
+  const isDone = visit === 'done'
+
   return (
-    <li className="overflow-hidden rounded-2xl border border-pub-green/20 bg-card shadow-sm">
+    <li
+      className={`overflow-hidden rounded-2xl border-2 ${style.cardBorder} ${style.cardBg} shadow-sm transition-colors`}
+    >
       <div className="flex gap-3 p-3.5">
-        <div className="flex flex-col items-center gap-1.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pub-green text-base font-bold text-white shadow">
-            {index + 1}
+        <div className="flex flex-col items-center gap-2">
+          <span
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg font-bold shadow ${style.number}`}
+          >
+            {isDone ? '✓' : index + 1}
           </span>
           <div className="flex flex-col leading-none">
             <button
@@ -45,7 +102,7 @@ function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove })
               aria-label="Move up"
               disabled={isFirst}
               onClick={() => onMove(pub.id, -1)}
-              className="px-1 py-0.5 text-xs text-ink/40 disabled:opacity-20"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-ink/50 hover:bg-ink/5 active:bg-ink/10 disabled:opacity-20 disabled:hover:bg-transparent"
             >
               ▲
             </button>
@@ -54,7 +111,7 @@ function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove })
               aria-label="Move down"
               disabled={isLast}
               onClick={() => onMove(pub.id, 1)}
-              className="px-1 py-0.5 text-xs text-ink/40 disabled:opacity-20"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-ink/50 hover:bg-ink/5 active:bg-ink/10 disabled:opacity-20 disabled:hover:bg-transparent"
             >
               ▼
             </button>
@@ -63,14 +120,16 @@ function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove })
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-display text-lg font-bold leading-tight text-pub-green underline decoration-pub-green/30 underline-offset-2">
+            <h3
+              className={`font-display text-lg font-bold leading-tight underline decoration-pub-green/30 underline-offset-2 ${style.titleClass} ${isDone ? 'line-through decoration-ink/30' : ''}`}
+            >
               {pub.name}
             </h3>
             <button
               type="button"
               aria-label={`Remove ${pub.name}`}
               onClick={() => onRemove(pub.id)}
-              className="-mr-1 shrink-0 rounded-full px-1.5 text-xl leading-none text-ink/30 hover:text-red-500"
+              className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xl leading-none text-ink/30 hover:bg-red-50 hover:text-red-500 active:bg-red-100"
             >
               ×
             </button>
@@ -84,7 +143,9 @@ function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove })
           )}
 
           {pub.description && (
-            <p className="mt-2 text-sm leading-snug text-ink/75">
+            <p
+              className={`mt-2 text-sm leading-snug ${isDone ? 'text-ink/45' : 'text-ink/75'}`}
+            >
               {pub.description}
             </p>
           )}
@@ -116,9 +177,20 @@ function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove })
             src={pub.photoUri}
             alt={pub.name}
             loading="lazy"
-            className="h-20 w-20 shrink-0 rounded-xl object-cover"
+            className={`h-20 w-20 shrink-0 rounded-xl object-cover ${isDone ? 'opacity-50' : ''}`}
           />
         )}
+      </div>
+
+      <div className="border-t border-pub-green/10 px-3.5 pt-2.5 pb-3">
+        <button
+          type="button"
+          onClick={() => onCycleVisit(pub.id)}
+          className={`w-full rounded-xl py-2.5 text-sm font-semibold transition-colors ${style.pillBg}`}
+        >
+          {style.pillLabel}
+        </button>
+        <NoteField pub={pub} onSetNote={onSetNote} />
       </div>
 
       {!isLast && (
@@ -130,5 +202,36 @@ function PubCard({ pub, index, isFirst, isLast, leg, hasKey, onMove, onRemove })
         </div>
       )}
     </li>
+  )
+}
+
+// Per-pub shared note. Synced with whatever's in the pub state, but only
+// committed on blur so we don't push a Firebase write per keystroke.
+function NoteField({ pub, onSetNote }) {
+  const [local, setLocal] = useState(pub.note ?? '')
+
+  useEffect(() => {
+    setLocal(pub.note ?? '')
+  }, [pub.note])
+
+  function commit() {
+    const trimmed = local.trim()
+    if (trimmed !== (pub.note ?? '')) {
+      onSetNote(pub.id, trimmed)
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+      }}
+      placeholder="Add a note (round's on Tom, meet at the bar…)"
+      className="mt-2 w-full rounded-lg border border-ink/15 bg-card/80 px-3 py-2 text-sm text-ink placeholder:text-ink/35 focus:border-pub-green focus:outline-none"
+    />
   )
 }

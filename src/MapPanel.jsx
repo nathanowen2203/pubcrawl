@@ -23,7 +23,10 @@ export default function MapPanel({ pubs, userLocation, onLegs }) {
       >
         {pubs.map((pub, i) => (
           <AdvancedMarker key={pub.id} position={pub.location} title={pub.name}>
-            <NumberPin n={i + 1} />
+            <NumberPin
+              n={i + 1}
+              visitStatus={pub.visitStatus ?? 'upcoming'}
+            />
           </AdvancedMarker>
         ))}
 
@@ -40,10 +43,20 @@ export default function MapPanel({ pubs, userLocation, onLegs }) {
   )
 }
 
-function NumberPin({ n }) {
+const PIN_STYLE = {
+  upcoming: 'bg-pub-green h-8 w-8 text-sm',
+  current: 'bg-sun h-10 w-10 text-base ring-4 ring-sun/30',
+  done: 'bg-pub-green/40 h-8 w-8 text-sm',
+}
+
+function NumberPin({ n, visitStatus }) {
+  const style = PIN_STYLE[visitStatus] ?? PIN_STYLE.upcoming
+  const isDone = visitStatus === 'done'
   return (
-    <span className="flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-pub-green text-sm font-bold text-white shadow-[0_2px_6px_rgba(0,0,0,0.4)]">
-      {n}
+    <span
+      className={`flex -translate-y-1/2 items-center justify-center rounded-full border-2 border-white font-bold text-white shadow-[0_2px_6px_rgba(0,0,0,0.4)] ${style}`}
+    >
+      {isDone ? '✓' : n}
     </span>
   )
 }
